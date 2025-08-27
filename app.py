@@ -35,5 +35,7 @@ def get_words():
     return jsonify({"words": words})
 
 if __name__ == "__main__":
-    # Run dev server
-    app.run(debug=True)
+    import os
+    port = int(os.environ.get("PORT", 8080))
+    app.run(host="0.0.0.0", port=port)
+

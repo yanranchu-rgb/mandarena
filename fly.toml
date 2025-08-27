@@ -1,0 +1,15 @@
+app = "mandarena-game"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  # Add any environment variables here if needed
+  # Example: FLASK_ENV = "production"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+
+[deploy]
+  primary_region = "sjc"

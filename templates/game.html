@@ -65,20 +65,27 @@
   </main>
 
   <div id="speechModal" class="modal hidden" role="dialog" aria-modal="true">
-    <div class="modal-content zoom-in">
-      <div class="modal-header">
-        <div class="modal-timer">
-          <div id="modalTimer" class="circle-timer small">5</div>
-        </div>
-        <div id="attemptText" class="attempt-text">Attempt 1 / 3</div>
+  <div class="modal-content zoom-in">
+    <div class="modal-header">
+      <div class="modal-timer">
+        <div id="modalTimer" class="circle-timer small">5</div>
       </div>
-      <div class="modal-word" id="modalWord">—</div>
-      <div class="modal-actions">
-        <button id="speakBtn" class="pix-btn speak">CLICK TO SPEAK</button>
-      </div>
-      <div id="modalResult" class="modal-result"></div>
+      <div id="attemptText" class="attempt-text">Attempt 1 / 3</div>
     </div>
+
+    <!-- Tip for single-character words -->
+    <p id="modalInstruction" style="display:none; color:rgb(57, 110, 244); font-weight:bold;">
+      Tip: try to stretch the end of the <br>
+      word longer for better recognition!
+    </p>
+
+    <div class="modal-word" id="modalWord">—</div>
+    <div class="modal-actions">
+      <button id="speakBtn" class="pix-btn speak">CLICK TO SPEAK</button>
+    </div>
+    <div id="modalResult" class="modal-result"></div>
   </div>
+</div>
 
   <div id="winnerOverlay" class="winner-overlay hidden">
     <div id="winnerText" class="winner-text">Player 1 Wins!</div>

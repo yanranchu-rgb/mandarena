@@ -3,6 +3,33 @@ let wordsPool = [];
 let currentPlayer = 1;       // 1 or 2
 let gameStarted = false;
 let gameOver = false;
+window.addEventListener("beforeunload", (e) => {
+  let message = "";
+
+  if (gameStarted && !gameOver) {
+    // Game in progress
+    message = "Refreshing the page will lose all progress in this game!";
+  } else {
+    // Game not started yet or already ended
+    message = "Refreshing will randomize the board order!";
+  }
+
+  if (message) {
+    e.preventDefault();
+    e.returnValue = message; // Standard for most browsers
+    return message;           // Some older browsers
+  }
+});
+
+// Warn user before leaving or refreshing the page
+window.addEventListener("beforeunload", (event) => {
+  if (gameStarted && !gameOver) {
+    const message = "Refreshing or leaving the page will lose all progress in the current game!";
+    event.preventDefault(); // Standard for most browsers
+    event.returnValue = message; // Chrome requires returnValue to be set
+    return message; // Some browsers still use this
+  }
+});
 
 // Per-turn control
 const MAX_ATTEMPTS_PER_CELL = 3;
@@ -222,6 +249,16 @@ function openSpeechModal(cell) {
   modalResultEl.textContent = "";
   attemptTextEl.textContent = `Attempt ${attemptsForCell+1} / ${MAX_ATTEMPTS_PER_CELL}`;
 
+  // ===== Show tip only for single-character words =====
+  const modalTipEl = document.getElementById("modalInstruction");
+  if ((cell.dataset.word || "").length === 1) {
+    modalTipEl.style.display = "block";
+    modalTipEl.style.whiteSpace = "pre-line"; // allow line breaks
+    modalTipEl.textContent = "Tip: For single characters, try to\nstretch the end of the word longer!";
+  } else {
+    modalTipEl.style.display = "none";
+  }
+
   setInstruction(`Player ${currentPlayer} is guessing…`);
   setBoardDisabled(true);
 
@@ -232,9 +269,12 @@ function openSpeechModal(cell) {
     attemptFail("Time out. Try again.");
   });
 
-  speakBtn.disabled = false;
+  speakBtn.disabled = false;  // Enable for the first attempt
   speakBtn.onclick = () => {
-    clickSound.currentTime = 0; clickSound.play();
+    if (speakBtn.disabled) return;  // Prevent multiple clicks
+    speakBtn.disabled = true;       // Disable immediately
+    clickSound.currentTime = 0;
+    clickSound.play();
     pauseModalCountdown();
     startSpeechRecognition(cell);
   };
@@ -243,21 +283,36 @@ function openSpeechModal(cell) {
 function closeSpeechModal() {
   stopModalCountdown(true);
   speechModal.classList.add("hidden");
-  if (activeCell) activeCell.classList.remove("modal-open");
-  highlightCell(activeCell, false);
+
+  if (activeCell) {
+    activeCell.classList.remove("modal-open");
+    highlightCell(activeCell, false);
+  }
+
+  // Reset shake so next modal opens clean
+  const modalContent = speechModal.querySelector(".modal-content");
+  modalContent.classList.remove("shake");
+
   activeCell = null;
   setBoardDisabled(false);
 }
 
 function attemptFail(msg) {
-  errorSound.currentTime = 0; errorSound.play();
+  errorSound.currentTime = 0; 
+  errorSound.play();
+  
   modalResultEl.textContent = msg;
+
   const modalContent = speechModal.querySelector(".modal-content");
+
+  // Force reflow to restart shake animation
   modalContent.classList.remove("shake");
   void modalContent.offsetWidth;
   modalContent.classList.add("shake");
 
   attemptsForCell++;
+  speakBtn.disabled = false; // re-enable button for the next attempt
+
   if (attemptsForCell < MAX_ATTEMPTS_PER_CELL) {
     attemptTextEl.textContent = `Attempt ${attemptsForCell+1} / ${MAX_ATTEMPTS_PER_CELL}`;
     startModalCountdown(5, () => {
@@ -303,31 +358,46 @@ function startSpeechRecognition(cell) {
   }
 
   const target = (cell.dataset.word || "").trim();
+
+  // Create new recognition instance
   const rec = new webkitSpeechRecognition();
   rec.lang = "zh-CN";
   rec.interimResults = false;
-  rec.maxAlternatives = 3;
+  rec.maxAlternatives = 8; // increased from 3 to 8
 
   let finished = false;
+  let retries = 0;  // number of automatic retries
+
+  const tryRecognition = () => {
+    if (finished) return;
+    rec.start();
+  };
 
   rec.onresult = (event) => {
     if (finished) return;
     finished = true;
+
     let spokenCandidates = [];
     for (let i = 0; i < event.results[0].length; i++) {
       spokenCandidates.push(event.results[0][i].transcript.trim());
     }
+
     const matched = spokenCandidates.some(s => looseMatchChinese(s, target));
     if (matched) {
       modalResultEl.textContent = "✔ Correct!";
-      setTimeout(() => {
-        attemptSuccess(cell);
-      }, 250);
+      setTimeout(() => attemptSuccess(cell), 250);
     } else {
       modalResultEl.textContent = "✖ Not quite.";
       setTimeout(() => {
-        resumeModalCountdown();
-        attemptFail("Wrong. Try again.");
+        retries++;
+        if (retries < 2) {
+          // Automatically retry short words immediately
+          finished = false;
+          tryRecognition();
+        } else {
+          resumeModalCountdown();
+          attemptFail("Wrong. Try again.");
+        }
       }, 200);
     }
   };
@@ -335,26 +405,38 @@ function startSpeechRecognition(cell) {
   rec.onerror = () => {
     if (!finished) {
       finished = true;
-      modalResultEl.textContent = "✖ Error. Try again.";
-      setTimeout(() => {
-        resumeModalCountdown();
-        attemptFail("Recogniser error. Try again.");
-      }, 200);
+      retries++;
+      if (retries < 2) {
+        finished = false;
+        tryRecognition();
+      } else {
+        modalResultEl.textContent = "✖ Error. Try again.";
+        setTimeout(() => {
+          resumeModalCountdown();
+          attemptFail("Recognizer error. Try again.");
+        }, 200);
+      }
     }
   };
 
   rec.onend = () => {
     if (!finished) {
       finished = true;
-      modalResultEl.textContent = "✖ No audio detected.";
-      setTimeout(() => {
-        resumeModalCountdown();
-        attemptFail("No audio detected.");
-      }, 200);
+      retries++;
+      if (retries < 2) {
+        finished = false;
+        tryRecognition();
+      } else {
+        modalResultEl.textContent = "✖ No audio detected.";
+        setTimeout(() => {
+          resumeModalCountdown();
+          attemptFail("No audio detected.");
+        }, 200);
+      }
     }
   };
 
-  rec.start();
+  tryRecognition();
 }
 
 function looseMatchChinese(spoken, target) {
@@ -362,8 +444,34 @@ function looseMatchChinese(spoken, target) {
   const s = norm(spoken);
   const t = norm(target);
   if (!s || !t) return false;
+
+  // Exact match
   if (s === t) return true;
+
+  // Remove common misrecognitions for single characters
+  const similarMap = {
+    "一": ["衣", "医"],
+    "二": ["儿"],
+    "三": ["散"],
+    "四": ["死", "寺"],
+    "十": ["石"],
+    "七": ["气"],
+    "八": ["吧"],
+    "九": ["久"]
+    // Add more if needed
+  };
+
+  if (t.length === 1) {
+    if (s.includes(t)) return true; 
+    if (similarMap[t] && similarMap[t].some(sim => s.includes(sim))) return true;
+  }
+
+  // Partial match for short words (1-2 chars)
+  if (t.length <= 2 && s.includes(t)) return true;
+
+  // Substring match for longer words
   if (s.includes(t)) return true;
+
   return false;
 }
 
@@ -579,3 +687,4 @@ function shuffleWords() {
     [wordsPool[i], wordsPool[j]] = [wordsPool[j], wordsPool[i]];
   }
 }
+
